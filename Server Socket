@@ -14,6 +14,7 @@ int main(int argc, char const* argv[])
     int server_fd, new_socket;
     ssize_t valread;
     struct sockaddr_in address;
+    socklen_t addrsize = sizeof(address);
     char buffer[1024] = { 0 };
     char* hello = "Hello from server";
 
@@ -41,7 +42,7 @@ int main(int argc, char const* argv[])
     }
     
     // Creo una seconda socket di appoggio perche la prima mi serve per stare in ascolto a tentativi di connessioni
-    if ((new_socket = accept(server_fd, (struct sockaddr*)&address,sizeof(address)) < 0)) {
+    if ((new_socket = accept(server_fd, (struct sockaddr*)&address,&addrsize) < 0)) {
         perror("accept");
         exit(EXIT_FAILURE);
     }
