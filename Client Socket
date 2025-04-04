@@ -1,4 +1,4 @@
-#include <arpa/inet.h>  // Per inet_pton
+#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,23 +8,28 @@
 
 #define PORT 5700
 
+// Buffer statici
+char sendUser[100];
+char destUser[100];
+
+// Prototipi
 void createSocket(int *fd);
 void connection(int fd, char addrsIP[]);
 void comunicate(int fd);
+void comunicateUser(int fd);
 
 int main(int argc, char *argv[]) {
     int client_fd;
 
-    // Creazione della socket
+    printf("Inserisci il tuo username: ");
+    scanf("%s", sendUser);
+    getchar(); // Pulisce il newline rimasto
+
     createSocket(&client_fd);
-
-    // Connessione al server
     connection(client_fd, "127.0.0.1");
-
-    // Comunicazione con il server
+    comunicateUser(client_fd);
     comunicate(client_fd);
 
-    // Chiusura della socket
     close(client_fd);
     return 0;
 }
@@ -37,11 +42,9 @@ void createSocket(int *fd) {
 }
 
 void connection(int fd, char addrsIP[]) {
-    int status;
     struct sockaddr_in address;
     socklen_t addrsize = sizeof(address);
 
-    // Inizializzo i campi della struct
     address.sin_family = AF_INET;
     address.sin_port = htons(PORT);
 
@@ -50,7 +53,7 @@ void connection(int fd, char addrsIP[]) {
         exit(EXIT_FAILURE);
     }
 
-    if ((status = connect(fd, (struct sockaddr*)&address, addrsize)) < 0) {
+    if (connect(fd, (struct sockaddr *)&address, addrsize) < 0) {
         perror("Connessione fallita");
         exit(EXIT_FAILURE);
     }
@@ -58,18 +61,39 @@ void connection(int fd, char addrsIP[]) {
 
 void comunicate(int fd) {
     char buffer[1024] = {0};
-    char *hello = "Ciao, sono il client!";
+    char message[1024];
+    ssize_t valread;
 
-    // Invio del messaggio al server
-    send(fd, hello, strlen(hello), 0);
-    printf("Messaggio inviato\n");
+    while (1) {
+        printf("[%s]: ", sendUser);
+        fgets(message, sizeof(message), stdin);
+        message[strcspn(message, "\n")] = 0;
 
-    // Ricezione della risposta dal server
-    ssize_t valread = read(fd, buffer, sizeof(buffer) - 1);
+        if (strcmp(message, "exit") == 0) {
+            printf("Disconnessione...\n");
+            break;
+        }
+
+        send(fd, message, strlen(message), 0);
+
+        valread = read(fd, buffer, sizeof(buffer) - 1);
+        if (valread > 0) {
+            buffer[valread] = '\0';
+            printf("[%s]: %s\n", destUser, buffer);
+        } else {
+            printf("Connessione chiusa dal server.\n");
+            break;
+        }
+    }
+}
+
+void comunicateUser(int fd) {
+    // Invio del mio username
+    send(fd, sendUser, strlen(sendUser), 0);
+
+    // Ricezione dello username del server
+    ssize_t valread = read(fd, destUser, sizeof(destUser) - 1);
     if (valread > 0) {
-        buffer[valread] = '\0';  // Assicura che la stringa sia terminata correttamente
-        printf("Risposta dal server: %s\n", buffer);
-    } else {
-        printf("Nessuna risposta dal server\n");
+        destUser[valread] = '\0';
     }
 }
