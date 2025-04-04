@@ -1,4 +1,4 @@
-#include <netinet/in.h> 
+#include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -7,59 +7,105 @@
 
 #define PORT 5700
 
+// Variabili globali per address
+struct sockaddr_in address;
+socklen_t addrsize = sizeof(address);
+
+// Buffer username
+char sendUser[100];
+char destUser[100];
+
+// Prototipi
+void createSocket(int *fd);
+void binding(int *fd);
+void listening(int *fd);
+void accepting(int *fd1, int *fd2);
+void comunication(int fd);
+void comunicateUser(int fd);
+
 int main() {
     int server_fd, new_socket;
-    ssize_t valread;
-    struct sockaddr_in address;
-    socklen_t addrsize = sizeof(address);
-    char buffer[1024] = {0};
-    char* hello = "Hello from server";
 
-    // Creazione della socket
-    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        perror("Socket creation failed");
-        exit(EXIT_FAILURE);
-    }
+    printf("Inserisci il tuo username: ");
+    scanf("%s", sendUser);
+    getchar(); // Per consumare il newline dopo scanf
 
-    // Configurazione dell'indirizzo del server
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(PORT);
+    createSocket(&server_fd);
+    binding(&server_fd);
+    listening(&server_fd);
+    accepting(&server_fd, &new_socket);
+    comunicateUser(new_socket);
+    comunication(new_socket);
 
-    // Binding della socket all'indirizzo
-    if (bind(server_fd, (struct sockaddr*)&address, sizeof(address)) < 0) {
-        perror("Bind failed");
-        exit(EXIT_FAILURE);
-    }
-
-    // Messa in ascolto
-    if (listen(server_fd, 1) < 0) {
-        perror("Listen failed");
-        exit(EXIT_FAILURE);
-    }
-
-    printf("Server in ascolto sulla porta %d...\n", PORT);
-
-    // Accettazione di una connessione
-    if ((new_socket = accept(server_fd, (struct sockaddr*)&address, &addrsize)) < 0) {
-        perror("Accept failed");
-        exit(EXIT_FAILURE);
-    }
-
-    // Lettura del messaggio dal client
-    valread = read(new_socket, buffer, sizeof(buffer) - 1);
-    if (valread > 0) {
-        buffer[valread] = '\0';  // Assicura che la stringa sia terminata correttamente
-        printf("Messaggio ricevuto: %s\n", buffer);
-    }
-
-    // Invio del messaggio di risposta
-    send(new_socket, hello, strlen(hello), 0);
-    printf("Messaggio di risposta inviato\n");
-
-    // Chiusura delle socket
     close(new_socket);
     close(server_fd);
 
     return 0;
+}
+
+void createSocket(int *fd) {
+    if ((*fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        perror("Errore nella creazione della socket");
+        exit(EXIT_FAILURE);
+    }
+}
+
+void binding(int *fd) {
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(PORT);
+
+    if (bind(*fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+        perror("Bind fallito");
+        exit(EXIT_FAILURE);
+    }
+}
+
+void listening(int *fd) {
+    if (listen(*fd, 1) < 0) {
+        perror("Listen fallito");
+        exit(EXIT_FAILURE);
+    }
+    printf("Server in ascolto sulla porta %d...\n", PORT);
+}
+
+void accepting(int *fd1, int *fd2) {
+    if ((*fd2 = accept(*fd1, (struct sockaddr *)&address, &addrsize)) < 0) {
+        perror("Accept fallito");
+        exit(EXIT_FAILURE);
+    }
+    printf("Connessione accettata\n");
+}
+
+void comunicateUser(int fd) {
+    // Ricevo l'username del client
+    ssize_t valread = read(fd, destUser, sizeof(destUser) - 1);
+    if (valread > 0) {
+        destUser[valread] = '\0';
+    }
+
+    // Invio il mio username al client
+    send(fd, sendUser, strlen(sendUser), 0);
+}
+
+void comunication(int fd) {
+    ssize_t valread;
+    char buffer[1024] = {0};
+    char write[1024];
+	
+	while(1){
+		valread = read(fd, buffer, sizeof(buffer) - 1);
+	    if (valread > 0) {
+	        buffer[valread] = '\0';
+	    }
+	
+	    printf("[%s]: %s\n", destUser, buffer);
+	    printf("[%s]: ", sendUser);
+	
+	    fgets(write, sizeof(write), stdin);
+	    write[strcspn(write, "\n")] = 0;
+	
+	    send(fd, write, strlen(write), 0);
+	}
+    
 }
