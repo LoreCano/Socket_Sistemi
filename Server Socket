@@ -5,44 +5,58 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define PORT 5700
+#define PORT 5700   // Porta su cui il client si collega al server
 
 // Variabili globali per address
 struct sockaddr_in address;
 socklen_t addrsize = sizeof(address);
 
-// Buffer username
-char sendUser[100];
-char destUser[100];
+// Buffer per i nomi utente (locale e remoto)
+char sendUser[100];  // Username del client
+char destUser[100];  // Username del server
 
-// Prototipi
+// Prototipi delle funzioni
 void createSocket(int *fd);
 void binding(int *fd);
 void listening(int *fd);
 void accepting(int *fd1, int *fd2);
-void comunication(int fd);
+void comunicate(int fd);
 void comunicateUser(int fd);
 
 int main() {
     int server_fd, new_socket;
 
+    // Richiesta dell' username dell'utente
     printf("Inserisci il tuo username: ");
-    scanf("%s", sendUser);
-    getchar(); // Per consumare il newline dopo scanf
+    fgets(sendUser, sizeof(sendUser), stdin);
+    sendUser[strcspn(sendUser, "\n")] = 0;  // Rimozione newline
 
+    // Creazione della socket
     createSocket(&server_fd);
-    binding(&server_fd);
-    listening(&server_fd);
-    accepting(&server_fd, &new_socket);
-    comunicateUser(new_socket);
-    comunication(new_socket);
 
+    // Binding della socket alla porta
+    binding(&server_fd);
+
+    // Mette la socket in ascolto
+    listening(&server_fd);
+
+    // Accetta una connessione in ingresso
+    accepting(&server_fd, &new_socket);
+
+    // Scambio degli username tra client e server
+    comunicateUser(new_socket);
+
+    // Ciclo di comunicazione messaggi
+    comunicate(new_socket);
+
+    // Chiusura socket
     close(new_socket);
     close(server_fd);
 
     return 0;
 }
 
+// Crea una socket TCP
 void createSocket(int *fd) {
     if ((*fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         perror("Errore nella creazione della socket");
@@ -50,17 +64,21 @@ void createSocket(int *fd) {
     }
 }
 
+// Fa il binding della socket alla porta
 void binding(int *fd) {
+    // Impostazione della struttura dell'indirizzo
     address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(PORT);
+    address.sin_addr.s_addr = INADDR_ANY;   // Qualsiasi IP disponibile
+    address.sin_port = htons(PORT);         // Porta convertita in network byte order
 
+    // Associa l'indirizzo alla socket
     if (bind(*fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
         perror("Bind fallito");
         exit(EXIT_FAILURE);
     }
 }
 
+// Mette la socket in modalita' ascolto, massimo 1 client in cod
 void listening(int *fd) {
     if (listen(*fd, 1) < 0) {
         perror("Listen fallito");
@@ -69,6 +87,7 @@ void listening(int *fd) {
     printf("Server in ascolto sulla porta %d...\n", PORT);
 }
 
+// Accetta una connessione in ingresso
 void accepting(int *fd1, int *fd2) {
     if ((*fd2 = accept(*fd1, (struct sockaddr *)&address, &addrsize)) < 0) {
         perror("Accept fallito");
@@ -77,35 +96,66 @@ void accepting(int *fd1, int *fd2) {
     printf("Connessione accettata\n");
 }
 
+// Comunica il proprio username e riceve quello del server
 void comunicateUser(int fd) {
-    // Ricevo l'username del client
+    // Riceve l'username del server
     ssize_t valread = read(fd, destUser, sizeof(destUser) - 1);
     if (valread > 0) {
-        destUser[valread] = '\0';
+        destUser[valread] = '\0';   // Aggiunge terminatore di stringa
     }
 
-    // Invio il mio username al client
+    // Invia l' username del server
     send(fd, sendUser, strlen(sendUser), 0);
 }
 
-void comunication(int fd) {
-    ssize_t valread;
-    char buffer[1024] = {0};
-    char write[1024];
-	
-	while(1){
-		valread = read(fd, buffer, sizeof(buffer) - 1);
-	    if (valread > 0) {
-	        buffer[valread] = '\0';
-	    }
-	
-	    printf("[%s]: %s\n", destUser, buffer);
-	    printf("[%s]: ", sendUser);
-	
-	    fgets(write, sizeof(write), stdin);
-	    write[strcspn(write, "\n")] = 0;
-	
-	    send(fd, write, strlen(write), 0);
-	}
+void comunicate(int fd) {
+    char recvBuffer[1024] = {0};  // Buffer per messaggi ricevuti
+    char sendBuffer[1024];        // Buffer per messaggi da inviare
+    ssize_t bytesRead;
+
+    while (1) {
+        // Ricezione messaggio dal client
+        bytesRead = read(fd, recvBuffer, sizeof(recvBuffer) - 1);
+        
+        if (bytesRead > 0) {
+            recvBuffer[bytesRead] = '\0';
+
+            // Se il client ha inviato "exit", chiude la connessione
+            if (strcmp(recvBuffer, "exit") == 0) {
+                printf("Il client si e' disconnesso.\n");
+                break;
+            }
+
+            // Mostra il messaggio ricevuto
+            printf("[%s]: %s\n", destUser, recvBuffer);  
+        } else if (bytesRead == 0) {
+            printf("Connessione chiusa dal client.\n");
+            break;
+        } else {
+            perror("Errore nella ricezione");
+            break;
+        }
+
+        // Pulizia buffer ricezione per la prossima iterazione
+        memset(recvBuffer, 0, sizeof(recvBuffer));
+
+        // Invia risposta al client
+        printf("[%s]: ", sendUser);
+        fgets(sendBuffer, sizeof(sendBuffer), stdin);
+        sendBuffer[strcspn(sendBuffer, "\n")] = 0;  // Rimozione newline
+
+        // Controllo se il server ha scritto "exit"
+        if (strcmp(sendBuffer, "exit") == 0) {
+            printf("Disconnessione...\n");
+            break;
+        }
+
+        // Invio messaggio al client
+        send(fd, sendBuffer, strlen(sendBuffer), 0);  
+
+        // Pulizia buffer per la prossima iterazione
+        memset(sendBuffer, 0, sizeof(sendBuffer));
+    }
+
     
 }
